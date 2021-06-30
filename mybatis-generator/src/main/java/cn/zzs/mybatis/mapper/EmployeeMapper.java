@@ -3,26 +3,34 @@ package cn.zzs.mybatis.mapper;
 import static cn.zzs.mybatis.mapper.EmployeeDynamicSqlSupport.*;
 import static org.mybatis.dynamic.sql.SqlBuilder.*;
 
-import cn.zzs.mybatis.entity.Employee;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+
 import org.apache.ibatis.annotations.DeleteProvider;
 import org.apache.ibatis.annotations.InsertProvider;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Result;
 import org.apache.ibatis.annotations.ResultMap;
+import org.apache.ibatis.annotations.ResultType;
 import org.apache.ibatis.annotations.Results;
 import org.apache.ibatis.annotations.SelectProvider;
 import org.apache.ibatis.annotations.UpdateProvider;
 import org.apache.ibatis.type.JdbcType;
 import org.mybatis.dynamic.sql.BasicColumn;
+import org.mybatis.dynamic.sql.SqlBuilder;
 import org.mybatis.dynamic.sql.delete.DeleteDSLCompleter;
 import org.mybatis.dynamic.sql.delete.render.DeleteStatementProvider;
 import org.mybatis.dynamic.sql.insert.render.InsertStatementProvider;
 import org.mybatis.dynamic.sql.insert.render.MultiRowInsertStatementProvider;
+import org.mybatis.dynamic.sql.render.MyBatis3RenderingStrategy;
+import org.mybatis.dynamic.sql.render.RenderingStrategies;
 import org.mybatis.dynamic.sql.select.CountDSLCompleter;
+import org.mybatis.dynamic.sql.select.QueryExpressionDSL;
 import org.mybatis.dynamic.sql.select.SelectDSLCompleter;
+import org.mybatis.dynamic.sql.select.SelectModel;
+import org.mybatis.dynamic.sql.select.join.EqualTo;
 import org.mybatis.dynamic.sql.select.render.SelectStatementProvider;
 import org.mybatis.dynamic.sql.update.UpdateDSL;
 import org.mybatis.dynamic.sql.update.UpdateDSLCompleter;
@@ -30,6 +38,9 @@ import org.mybatis.dynamic.sql.update.UpdateModel;
 import org.mybatis.dynamic.sql.update.render.UpdateStatementProvider;
 import org.mybatis.dynamic.sql.util.SqlProviderAdapter;
 import org.mybatis.dynamic.sql.util.mybatis3.MyBatis3Utils;
+
+import cn.zzs.mybatis.entity.Employee;
+import cn.zzs.mybatis.entity.EmployeeVO;
 
 @Mapper
 public interface EmployeeMapper {
@@ -68,7 +79,8 @@ public interface EmployeeMapper {
      * @return Optional<Employee>
      */
     @SelectProvider(type=SqlProviderAdapter.class, method="select")
-    @ResultMap("EmployeeResult")
+    // @ResultMap("EmployeeResult")
+    @ResultType(Employee.class)
     Optional<Employee> selectOne(SelectStatementProvider selectStatement);
 
     /**
@@ -76,7 +88,7 @@ public interface EmployeeMapper {
      * @return List<Employee>
      */
     @SelectProvider(type=SqlProviderAdapter.class, method="select")
-    @Results(id="EmployeeResult", value = {
+    /*@Results(id="EmployeeResult", value = {
         @Result(column="id", property="id", jdbcType=JdbcType.VARCHAR, id=true),
         @Result(column="name", property="name", jdbcType=JdbcType.VARCHAR),
         @Result(column="gender", property="gender", jdbcType=JdbcType.BIT),
@@ -89,7 +101,8 @@ public interface EmployeeMapper {
         @Result(column="department_id", property="departmentId", jdbcType=JdbcType.VARCHAR),
         @Result(column="gmt_create", property="gmtCreate", jdbcType=JdbcType.TIMESTAMP),
         @Result(column="gmt_modified", property="gmtModified", jdbcType=JdbcType.TIMESTAMP)
-    })
+    })*/
+    @ResultType(Employee.class)
     List<Employee> selectMany(SelectStatementProvider selectStatement);
 
     /**
@@ -285,4 +298,49 @@ public interface EmployeeMapper {
             .where(id, isEqualTo(record::getId))
         );
     }
+    
+    default List<EmployeeVO> selectVO(SelectDSLCompleter completer) {
+        BasicColumn[] selectVOList = Arrays.copyOf(selectList, selectList.length + 1);
+        selectVOList[selectList.length] = DepartmentDynamicSqlSupport.name.as("department_name");
+        QueryExpressionDSL<SelectModel> start = SqlBuilder
+            .select(selectVOList)
+            .from(employee);
+        return selectVOMany(MyBatis3Utils.select(start, completer));
+    }
+    
+    default List<Employee> selectSub(SelectDSLCompleter completer) {
+        QueryExpressionDSL<SelectModel>.GroupByFinisher dsl0 = SqlBuilder.select(max(gmtCreate).as("maxGmtCreate"))
+                .from(employee)
+                .where(name, isLikeWhenPresent("zzs%"))
+                .groupBy(departmentId);
+        
+        SelectStatementProvider statementProvider = SqlBuilder
+            .select(selectList)
+            .from(employee, "employee")
+            .join(dsl0, "sub").on(constant("maxGmtCreate"), new EqualTo(gmtCreate))
+            .build()
+            .render(RenderingStrategies.MYBATIS3);
+            ;
+        return selectMany(statementProvider);
+    }
+    
+    
+    @SelectProvider(type=SqlProviderAdapter.class, method="select")
+    /*@Results(id="EmployeeVOResult", value = {
+        @Result(column="id", property="id", jdbcType=JdbcType.VARCHAR, id=true),
+        @Result(column="name", property="name", jdbcType=JdbcType.VARCHAR),
+        @Result(column="gender", property="gender", jdbcType=JdbcType.BIT),
+        @Result(column="no", property="no", jdbcType=JdbcType.VARCHAR),
+        @Result(column="password", property="password", jdbcType=JdbcType.VARCHAR),
+        @Result(column="phone", property="phone", jdbcType=JdbcType.VARCHAR),
+        @Result(column="address", property="address", jdbcType=JdbcType.VARCHAR),
+        @Result(column="status", property="status", jdbcType=JdbcType.TINYINT),
+        @Result(column="deleted", property="deleted", jdbcType=JdbcType.BIT),
+        @Result(column="department_id", property="departmentId", jdbcType=JdbcType.VARCHAR),
+        @Result(column="gmt_create", property="gmtCreate", jdbcType=JdbcType.TIMESTAMP),
+        @Result(column="gmt_modified", property="gmtModified", jdbcType=JdbcType.TIMESTAMP), 
+        @Result(column="departmentName", property="departmentName", jdbcType=JdbcType.TIMESTAMP)
+    })*/
+    @ResultType(EmployeeVO.class)
+    List<EmployeeVO> selectVOMany(SelectStatementProvider selectStatement);
 }
